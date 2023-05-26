@@ -249,15 +249,19 @@ public class Wark1 : MonoBehaviour
             // 2. 플레이어가 어느정도 가까워지면, 플레이어를 공격하도록 추적
             // 2-1. 추적 중에 너무 멀어지면 다시 제자리
             // 2-2. 추적중에 공격범위 안에 들어오면 공격함
-            public enum State { Idle, Trace, Return, Attack}    // 가만히, 추적, 돌아오기, 공격
+            public enum State { Idle, Trace, Return, Attack, Patrol }    // 가만히, 추적, 돌아오기, 공격, 순찰
+
             [SerializeField] private TMP_Text text;             // 텍스트를 이용해 현재 무엇을 하고있나 표시함 switch와 연동
             [SerializeField] private float detectRange;         // 이 영역 안에 있으면 쫓아가게 하기 위해 썻음
             [SerializeField] private float attackRange;
             [SerializeField] private float moveSpeed;
+            [SerializeField] private Transform[] patrolPoints;  // 패트롤 포인트가 몇개나 만들지 몰라서 배열로 정해준다.
+
             private State curState;                             // 지금상태를 보관하는 현재상태
             // private PlayerController player;                 // PlayerController스크립트가 달린 플레이어를 찾기위해 씀
             private Transform player;                           // Player의 Tag가 달린 플레이어의 현재위치를 찾기위해 사용
             private Vector3 returnPosition;                     // 돌아갈 위치(지금 있어야 할 위치) 현재위치가 아닌 돌아가야할 위치로 가야하기때문에 트랜스폼대신 백터를 씀
+            private int patroIndex = 0;                         // 현재 내가 몇번째 위치를 순찰중인지 아는 patroIndex 0번째부터 시작
             private void Start()
             {
                 curState = State.Idle;                          // 시작하자마자 상태
@@ -284,14 +288,27 @@ public class Wark1 : MonoBehaviour
                         text.text = "Attack";
                         AttackUpdate();
                         break;
+                    case State.Patrol:
+                        PatrolUpdate();
+                        break;
                 }
             }
+            float idleTime = 0; // idleTime를 0으로 선언
             private void IdleUpdate()   // 평소상태
             {
                 // 아무것도 안하기
 
+                // 순찰시간이 되었을 때
+                if (idleTime > 2) // 2초동안 아무것도 안할시
+                {
+                    idleTime = 0;            // 0으로 만듬
+                    patroIndex = (patroIndex + 1) % patrolPoints.Length; // patroIndex가 patrolPoints의 갯수를 넘어가면 안돼니 patrolIndex를 +1을 해주고 %로 patrolPoints를 Length만큼 나머지 연산을 해줌 ex. 패트롤 포인트의 갯수는 2개인데 2개를 넘어가면 안되니 3번째 포인트로 가는게 아닌 0번째 포인트로 가줌
+                    curState = State.Patrol; // 순찰상태로 전환
+                }
+                idleTime += Time.deltaTime;
+
                 // 플레이어와 가까워졌을 때
-                if (Vector2.Distance(player.position, transform.position) < detectRange ) // 플레이어의 포지션과 지금 나의 포지션이 detectRange보다 작으면 플레이어가 가까워졌다고 인식함
+                if (Vector2.Distance(player.position, transform.position) < detectRange) // 플레이어의 포지션과 지금 나의 포지션이 detectRange보다 작으면 플레이어가 가까워졌다고 인식함
                 {
                     curState = State.Trace; // 따라가는게 아닌 추적상태로 변환함
                 }
@@ -318,12 +335,12 @@ public class Wark1 : MonoBehaviour
             private void ReturnUpdate() // 돌아올떄
             {
                 // 원래 자리로 돌아가기
-                Vector2 dir = (returnPosition - transform.position).normalized;  
-                transform.Translate(dir * moveSpeed * Time.deltaTime); 
+                Vector2 dir = (returnPosition - transform.position).normalized;
+                transform.Translate(dir * moveSpeed * Time.deltaTime);
 
                 // 원래 자리로 도착했으면
                 if (Vector2.Distance(transform.position, returnPosition) < 0.02f) // 돌아가고자하는 위치가 0.02보다 작으면 도착했다고 본다.
-                    // if (transform.position == returnPosition) 돌아가고자 하는 위치가 정확하게 현재위치라면 맞지만 float는 대략적인 소수점을 표현하는 방식이다 보니 조금만 틀어져도 달랐다고 나오고 유니티는 프레임 기반으로 돌아가다 보니 도착위치가 한프레임의 속도와 딱 맞지 않는 위치에 있다면 역방으로 돌아왔다갔다 하다보니 계속 떨리기만 하고 반복하다보니 근접했다고 쓰는게 낫다
+                                                                                  // if (transform.position == returnPosition) 돌아가고자 하는 위치가 정확하게 현재위치라면 맞지만 float는 대략적인 소수점을 표현하는 방식이다 보니 조금만 틀어져도 달랐다고 나오고 유니티는 프레임 기반으로 돌아가다 보니 도착위치가 한프레임의 속도와 딱 맞지 않는 위치에 있다면 역방으로 돌아왔다갔다 하다보니 계속 떨리기만 하고 반복하다보니 근접했다고 쓰는게 낫다
                 {
                     curState = State.Idle; // 평소상태로 전환
                 }
@@ -341,10 +358,29 @@ public class Wark1 : MonoBehaviour
                     Debug.Log("공격");
                     lastAttackTime = 0; // 3보다 커졌으니 다시 0으로 만듬
                 }
-
                 lastAttackTime += Time.deltaTime;  // lastAttackTime을 Time.deltaTime만큼 더해줌, 1초가 됐을때 1만큼 누적
+                // 폴링방식의 시간을 누적시켜서 하는 방식
 
                 if (Vector2.Distance(player.position, transform.position) > attackRange) // 공격하다가 공격범위를 벗어나면, 추격상태로 바꾸기 위해 쓰려면 detectRange가 attackRange보다 커야함
+                {
+                    curState = State.Trace; // 추격상태로 전환
+                }
+            }
+            private void PatrolUpdate() //순찰할때
+            {
+                // 빈게임 오브젝트를 만들어서 술찰위치를 지정해줄 수 있다.
+                // 순찰진행
+                // patroIndex++; 다음위치를 순찰해야하니 하나를 늘려줌
+                Vector2 dir = (patrolPoints[patroIndex].position - transform.position).normalized; // patrolPointsd의 patroIndex의 자리로 가줌
+                transform.Translate(dir * moveSpeed * Time.deltaTime);
+
+                if (Vector2.Distance(transform.position, patrolPoints[patroIndex].position) < 0.02f)  //patrolPoints의 patroIndex의 위치로 가면
+
+                {
+                    curState = State.Idle; // 평소상태로 전환
+
+                }
+                else if (Vector2.Distance(player.position, transform.position) < detectRange) // 돌아가는 도중에 플레이어를 발견하면
                 {
                     curState = State.Trace; // 추격상태로 전환
                 }
@@ -357,31 +393,97 @@ public class Wark1 : MonoBehaviour
                 Gizmos.DrawWireSphere(transform.position, attackRange); // 내위치로부터 attackRange 만큼 동그랗게 그려줌 DrawWireSphere : 동그라미
             }
 
+            // 상태패턴가지고 구현했을경우 업데이트끼리 간섭을 하는 문제가 있을 수 있음
+            // 현재 위에 Bee를 만든 경우 Bee라는 몬스터 안에 Idle와 Trace를 넣어놔서 둘의 서로간의 정보교환이 가능하다.
+            // Idle에서 건드리지 않아야 할 변수를 Trace에서 건드렸을 때 문제가 될 수 있다.
+            // 각각의 상태를 따로따로 캡슐화를 시켜주고 싶은 경우 각각을 class로 만들어줘야 할 필요성이 있다.
+            // 상태클래스 StateBase를 하나 만들어주고 StateBase 상속하도록 IdleBase, TraceBase와 같은 다른 상태들을 만들어주고 Bee가 만들어진 상태들을 왕복하게 만들어준다
 
+            public interface IState // 상태 자체를 interface 쓰는 경우도 있다. public interface IState나 public class StatBase 둘다 괜찮은 방식이다
+            {
+                // 행동들만 설계해도 됨
+            }
+            public abstract class StateBase // 상태들의 부모클래스 설정 가능 // 추상클래스로 구현한 이유는 Bee에 있는 함수들을 가져다 쓸 수  있지만 단지 취향 차이임
+            //public abstract class StatBase<TOwner> where TOwner : MonoBehaviour // 이 상태가 어떤 컴포넌트의 상태인지를 일반화 시켜서 가지고 있는 경우 도움되는 경우가 있다. // TOwner가 MonoBehaviour이다
+            {
+                // private TOwner owner; // StatBase의 어떤 컴포넌트가 이 상태를 가지고있는지
+                // public StatBase(TOwner owner) // StatBase를 생성할 당시 TOwner owner를 같이 준다
+                // {
+                //     this.owner = owner;
+                // }
+                // 각 상태마다 진행해야 하는 업데이트 함수
+                public abstract void Setup();   // 초기세팅 // 컨셉에 맞춰 Start로 해도 된다.
+                public abstract void Enter();   // 진입 // 상태에 진입했을 떄 호출받을 수 있는 Enter함수 구현
+                public abstract void Update();  // 동작 // abstract를 통해 추상함수를 쓴다하면 StatBase를 쓰는 함수는 반드시 업데이트를 구현할수밖에 없다.
+                public abstract void Exit();    // 탈출 // 그 상태에서 벗어났을때 쓰는 Exit 함수
+                // 이 함수들을 따로 관리해주면 좋다.
+            }
+
+            // 위에서 사용한 Bee를 캡슐화하기
+            // 업데이트로 구현한 방식이 아니다 보니 상태들에 대해 여러 상태를 들고 있을 수 있게 뒤에서 구현
+            public class Bee : MonoBehaviour
+            {
+                public enum State { Idle, Trace, Return, Attack, Patrol, Size } // Size는 상태는 아니고 열거형의 몇개를 가지고 있는지 확인할 때 쓴다. Size는 열거형의 꼭 맨 뒤에 둬야한다. Size를 넣으면 열거형을 int로 변환할 수 있다.
+
+                [SerializeField] private TMP_Text text;
+                [SerializeField] private float detectRange;
+                [SerializeField] private float attackRange;
+                [SerializeField] private float moveSpeed;
+                [SerializeField] private Transform[] patrolPoints;
+
+                private StateBase<Bee>[] states; // Bee의 StateBase를 states로 배열로 들고있는다. // 딕셔너리 형태로 쓰는 경우도 있다.
+                private State curState;
+
+                private Transform player;
+                private Vector3 returnPosition;
+                private int patroIndex = 0;
+                private void Awake() // Awake에서 상태를 가질 수 있는 배열을 만든다
+                {
+                    states = new StateBase<Bee>[(int)State.Size]; // State의 Size는 5개다. 여기서 5개만 써서 그렇지 더 쓰면 더 올라간다. 내가 가지고 있는 상태의 갯수만큼 변환할 수 있는 역할로 만들 수 있다.
+                }
+                private void Start()
+                {
+                    curState = State.Idle;
+                    player = GameObject.FindGameObjectWithTag("Player").transform;
+                    returnPosition = transform.position;
+                }
+
+                private void OnDrawGizmos()
+                {
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawWireSphere(transform.position, detectRange);
+                    Gizmos.color = Color.red;
+                    Gizmos.DrawWireSphere(transform.position, attackRange);
+                }
+            }
+        }
+    }
+}
+namespace BeeState //IdleState라는 이름자체가 다른곳에서 많이 쓰일 수 있기때문에 namespace를 사용한다.
+{
+    public class IdleState : StateBase<Bee> // IdleState는 StateBase의 Bee를 상속받음
+    {
+        public IdleState(BeeState owner) : base(owner)
+        {
 
         }
+        public abstract void Setup()
+        {
+            
+        }
+        public abstract void Enter()
+        {
 
+        }
+        public abstract void Update()
+        {
 
+        }
+        public abstract void Exit()
+        {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        }
     }
+}
+ 
 
