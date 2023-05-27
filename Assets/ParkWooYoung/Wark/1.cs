@@ -1,8 +1,14 @@
+using System.Media;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using static UnityEditor.Experimental.GraphView.GraphView;
+using static UnityEngine.RuleTile.TilingRuleOutput;
+using System.Numerics;
+using UnityEditor.U2D.Path.GUIFramework;
+using static Wark1.State.Bee;
+using UnityEditor.VersionControl;
 
 public class Wark1 : MonoBehaviour
 {
@@ -403,14 +409,16 @@ public class Wark1 : MonoBehaviour
             {
                 // 행동들만 설계해도 됨
             }
-            public abstract class StateBase // 상태들의 부모클래스 설정 가능 // 추상클래스로 구현한 이유는 Bee에 있는 함수들을 가져다 쓸 수  있지만 단지 취향 차이임
-            //public abstract class StatBase<TOwner> where TOwner : MonoBehaviour // 이 상태가 어떤 컴포넌트의 상태인지를 일반화 시켜서 가지고 있는 경우 도움되는 경우가 있다. // TOwner가 MonoBehaviour이다
+            // public abstract class StateBase // 상태들의 부모클래스 설정 가능 // 추상클래스로 구현한 이유는 Bee에 있는 함수들을 가져다 쓸 수  있지만 단지 취향 차이임
+            // public abstract class StatBase<TOwner> where TOwner : MonoBehaviour // 이 상태가 어떤 컴포넌트의 상태인지를 일반화 시켜서 가지고 있는 경우 도움되는 경우가 있다. // TOwner가 MonoBehaviour이다
+            public abstract class StateBase<TOwner> where TOwner : MonoBehaviour
             {
                 // private TOwner owner; // StatBase의 어떤 컴포넌트가 이 상태를 가지고있는지
-                // public StatBase(TOwner owner) // StatBase를 생성할 당시 TOwner owner를 같이 준다
-                // {
-                //     this.owner = owner;
-                // }
+                protected TOwner owner;
+                 public StateBase(TOwner owner) // StatBase를 생성할 당시 TOwner owner를 같이 준다
+                 {
+                     this.owner = owner;
+                 }
                 // 각 상태마다 진행해야 하는 업데이트 함수
                 public abstract void Setup();   // 초기세팅 // 컨셉에 맞춰 Start로 해도 된다.
                 public abstract void Enter();   // 진입 // 상태에 진입했을 떄 호출받을 수 있는 Enter함수 구현
@@ -419,34 +427,52 @@ public class Wark1 : MonoBehaviour
                 // 이 함수들을 따로 관리해주면 좋다.
             }
 
+            //************************************************************************************************************************************************
             // 위에서 사용한 Bee를 캡슐화하기
             // 업데이트로 구현한 방식이 아니다 보니 상태들에 대해 여러 상태를 들고 있을 수 있게 뒤에서 구현
             public class Bee : MonoBehaviour
             {
                 public enum State { Idle, Trace, Return, Attack, Patrol, Size } // Size는 상태는 아니고 열거형의 몇개를 가지고 있는지 확인할 때 쓴다. Size는 열거형의 꼭 맨 뒤에 둬야한다. Size를 넣으면 열거형을 int로 변환할 수 있다.
 
-                [SerializeField] private TMP_Text text;
-                [SerializeField] private float detectRange;
-                [SerializeField] private float attackRange;
-                [SerializeField] private float moveSpeed;
-                [SerializeField] private Transform[] patrolPoints;
+                [SerializeField] public TMP_Text text;
+                [SerializeField] public float detectRange;
+                [SerializeField] public float attackRange;
+                [SerializeField] public float moveSpeed;
+                [SerializeField] public Transform[] patrolPoints;
+                
+                /*
+                 * 이런 정보들 같은경우는 MVC패턴을 적용한다하면 Bee모델에만 적용해주고 Bee자체는 컨트롤러로 써주는게 좋다
+                public TMP_Text text;
+                public float detectRange;
+                public float attackRange;
+                public float moveSpeed;
+                public Transform[] patrolPoints;
+                public Transform player;
+                public Vector3 returnPosition;
+                public int patroIndex = 0;
+                */
 
                 private StateBase<Bee>[] states; // Bee의 StateBase를 states로 배열로 들고있는다. // 딕셔너리 형태로 쓰는 경우도 있다.
-                private State curState;
+                private StateBase<Bee> curState;
 
-                private Transform player;
-                private Vector3 returnPosition;
-                private int patroIndex = 0;
+                public Transform player;            // private Transform player;          // 모델로 따로 빼주는게 좋지만 지금은 Bee 하나에서 모델이랑 컨트롤러 한번에 쓴다.
+                public Vector3 returnPosition;      // private Vector3 returnPosition;    // 모델로 따로 빼주는게 좋지만 지금은 Bee 하나에서 모델이랑 컨트롤러 한번에 쓴다.
+                public int patroIndex = 0;          // private int patroIndex = 0;        // 모델로 따로 빼주는게 좋지만 지금은 Bee 하나에서 모델이랑 컨트롤러 한번에 쓴다.
                 private void Awake() // Awake에서 상태를 가질 수 있는 배열을 만든다
                 {
                     states = new StateBase<Bee>[(int)State.Size]; // State의 Size는 5개다. 여기서 5개만 써서 그렇지 더 쓰면 더 올라간다. 내가 가지고 있는 상태의 갯수만큼 변환할 수 있는 역할로 만들 수 있다.
                 }
                 private void Start()
                 {
-                    curState = State.Idle;
                     player = GameObject.FindGameObjectWithTag("Player").transform;
                     returnPosition = transform.position;
                 }
+                // 아래 캡슐화에서 상태전환이 있을 때 Bee컨트롤러에 추가
+                public void ChangeState(State state)
+                {
+                    curState.Exit(); // 현재상태를 우선 빠져나간다.
+                }
+
 
                 private void OnDrawGizmos()
                 {
@@ -463,27 +489,70 @@ namespace BeeState //IdleState라는 이름자체가 다른곳에서 많이 쓰일 수 있기때문에
 {
     public class IdleState : StateBase<Bee> // IdleState는 StateBase의 Bee를 상속받음
     {
-        public IdleState(BeeState owner) : base(owner)
+        // 캡슐화가 완료되었을 경우 다른클래스에 있는걸 쓰고 싶어도 쓸 수가 없어진다
+        private float idleTime;
+        public IdleState(Bee owner) : base(owner)
         {
 
         }
-        public abstract void Setup()
+        public override void Setup()
         {
             
         }
-        public abstract void Enter()
+        public override void Enter() // 상태에 진입했을 때 단 한번만 할 일
         {
-
+            idleTime = 0; // 진입했으니 idleTime은 0부터 진행
         }
-        public abstract void Update()
+        public override void Update() // 업데이트일 때 할일 
         {
+            // 아무것도 안하기
+            
+            idleTime += Time.deltaTime;
 
+            // 순찰시간이 되었을 때
+            if (idleTime > 2)
+            {
+                idleTime = 0;
+                owner.patroIndex = (owner.patroIndex + 1) % owner.patrolPoints.Length; // owner자체가 Bee가 되어 Bee에 있는 patroIndex를 써준다.
+                // curState = State.Patrol;
+            }
+
+            else if (Vector2.Distance(owner.player.position, owner.transform.position) < owner.detectRange) 
+            {
+                // curState = State.Trace;
+            }
         }
-        public abstract void Exit()
+        public override void Exit() // 벗어났을 때 할일
         {
 
         }
     }
+
+    public class TraceState : StateBase<Bee>
+    {
+        
+        public TraceState(BeeState owner) : base(owner)
+        {
+
+        }
+        public override void Setup()
+        {
+            idleTime = 1; // 캡슐화를 했을 때 IdleState에서 만든 idleTime는 아예 다른클래스라 고칠수가 없다.
+        }
+        public override void Enter()
+        {
+
+        }
+        public override void Update()
+        {
+
+        }
+        public override void Exit()
+        {
+
+        }
+    }
+}
 }
  
 
